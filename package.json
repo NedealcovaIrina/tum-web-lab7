@@ -18,6 +18,7 @@
   },
   "homepage": "https://github.com/NedealcovaIrina/tum-web-lab7#readme",
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^5.1.0"
   }
 }
