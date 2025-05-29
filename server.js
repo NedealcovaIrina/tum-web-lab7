@@ -1,26 +1,26 @@
 // server.js
 
-// Импортируем необходимые модули
+// Подключаем модули
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-require('dotenv').config(); // Загружает переменные окружения из .env
+require('dotenv').config(); // Загружаем переменные окружения (.env)
 
-// Импортируем Swagger-пакеты для документации API
+// Подключаем Swagger для документации API
 const swaggerUi = require('swagger-ui-express');
-const swaggerDocument = require('./swagger.json'); // Путь к файлу swagger.json
+const swaggerDocument = require('./swagger.json'); // Файл документации
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-// Важно: В реальном проекте JWT_SECRET должен быть сложным и храниться в .env
+// Секретный ключ для JWT (в проде использовать сложный из .env)
 const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_key_here_make_it_long_and_random';
 
 // --- Middleware ---
-app.use(cors()); // Включаем CORS для всех запросов
-app.use(express.json()); // Включаем парсинг JSON для тела запросов
+app.use(cors()); // Разрешаем CORS
+app.use(express.json()); // Парсим JSON в теле запросов
 
-// --- Наша "фиктивная" база данных для желаний ---
-// В реальном приложении это была бы база данных (PostgreSQL, MongoDB и т.д.)
+// --- Временная база данных желаний ---
+// В реальном приложении тут будет настоящая БД
 let wishes = [
   { id: 1, text: 'New Gaming PC', liked: true, fulfilled: false },
   { id: 2, text: 'Trip to Japan', liked: false, fulfilled: false },
@@ -33,14 +33,14 @@ let wishes = [
   { id: 9, text: 'Cook a gourmet meal', liked: true, fulfilled: true },
   { id: 10, text: 'Learn a new language', liked: false, fulfilled: false },
 ];
-// Для генерации уникальных ID для новых желаний
+// Для новых желаний (уникальный ID)
 let nextWishId = wishes.length > 0 ? Math.max(...wishes.map(w => w.id)) + 1 : 1;
 
-// --- JWT Authentication Middleware ---
-// Проверяет наличие и валидность JWT токена
+// --- Middleware для проверки JWT ---
+// Проверяем токен
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  // Токен должен быть в формате "Bearer YOUR_TOKEN"
+  // Ожидаем формат "Bearer YOUR_TOKEN"
   const token = authHeader && authHeader.split(' ')[1];
 
   if (token == null) {
@@ -49,56 +49,55 @@ const authenticateToken = (req, res, next) => {
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      // Ошибка может быть из-за неверного токена или его истечения
+      // Ошибка верификации или истекший токен
       console.error('JWT verification error:', err.message);
       return res.status(403).json({ message: 'Invalid or expired token' });
     }
-    req.user = user; // Добавляем информацию о пользователе в объект запроса
-    next(); // Продолжаем выполнение запроса
+    req.user = user; // Добавляем инфо о пользователе в запрос
+    next(); // Продолжаем
   });
 };
 
-// --- Authorization Middleware (проверка разрешений) ---
-// Проверяет, есть ли у пользователя необходимые разрешения
+// --- Middleware для проверки разрешений ---
 const authorizePermission = (requiredPermissions) => {
   return (req, res, next) => {
-    // Если информация о пользователе или его разрешения отсутствуют в токене
+    // Если нет инфо о пользователе или разрешениях в токене
     if (!req.user || !req.user.permissions) {
       return res.status(403).json({ message: 'Access denied: No permissions found in token' });
     }
 
-    // Проверяем, есть ли хотя бы одно требуемое разрешение у пользователя
+    // Проверяем наличие нужного разрешения
     const hasPermission = requiredPermissions.some(permission =>
       req.user.permissions.includes(permission)
     );
 
     if (hasPermission) {
-      next(); // Разрешение есть, продолжаем
+      next(); // Разрешение есть
     } else {
       res.status(403).json({ message: 'Access denied: Insufficient permissions' });
     }
   };
 };
 
-// --- Маршрут для документации Swagger UI ---
-// Сервер Swagger UI будет доступен по пути /api-docs
+// --- Маршрут для Swagger UI ---
+// Доступно по /api-docs
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 // --- Базовый маршрут ---
-// Простая проверка работы сервера
+// Проверка работы
 app.get('/', (req, res) => {
   res.send('Welcome to the Wishlist Backend API!');
 });
 
-// --- Эндпоинт для получения JWT токена ---
-// Этот эндпоинт не требует авторизации
+// --- Эндпоинт для получения токена ---
+// Не требует авторизации
 app.post('/api/token', (req, res) => {
   const { username, password } = req.body;
 
   let userRole = 'VISITOR';
-  let userPermissions = ['READ']; // По умолчанию у посетителя только разрешение на чтение
+  let userPermissions = ['READ']; // По умолчанию
 
-  // Проверяем учетные данные и назначаем роль/разрешения
+  // Проверка учетных данных и назначение роли/разрешений
   if (username === 'admin' && password === 'adminpass') {
     userRole = 'ADMIN';
     userPermissions = ['READ', 'WRITE', 'DELETE'];
@@ -109,25 +108,25 @@ app.post('/api/token', (req, res) => {
     userRole = 'VISITOR';
     userPermissions = ['READ'];
   } else {
-    // Если учетные данные недействительны
+    // Неверные данные
     return res.status(401).json({ message: 'Invalid credentials' });
   }
 
-  // Создаем payload для JWT токена
+  // Payload для токена
   const payload = {
     username: username,
     role: userRole,
     permissions: userPermissions
   };
 
-  // Генерируем токен, срок действия 1 час
+  // Генерируем токен (срок действия 1 час)
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
 
-  // Отправляем токен клиенту
+  // Отправляем токен
   res.status(200).json({ token: token });
 });
 
-// --- Защищенные CRUD-эндпоинты для желаний ---
+// --- Защищенные CRUD эндпоинты для желаний ---
 
 // Получить все желания (с пагинацией и поиском)
 app.get('/api/wishes', authenticateToken, authorizePermission(['READ']), (req, res) => {
@@ -182,8 +181,8 @@ app.post('/api/wishes', authenticateToken, authorizePermission(['WRITE']), (req,
     fulfilled: typeof fulfilled === 'boolean' ? fulfilled : false,
   };
 
-  wishes.unshift(newWish); // Добавляем новое желание в начало списка
-  res.status(201).json(newWish); // Отправляем созданное желание с кодом 201 Created
+  wishes.unshift(newWish); // Добавляем в начало списка
+  res.status(201).json(newWish); // 201 Created
 });
 
 // Обновить существующее желание
@@ -195,7 +194,7 @@ app.put('/api/wishes/:id', authenticateToken, authorizePermission(['WRITE']), (r
     return res.status(404).json({ message: 'Wish not found' });
   }
 
-  // Обновляем существующее желание с данными из тела запроса
+  // Обновляем данные желания
   wishes[wishIndex] = { ...wishes[wishIndex], ...req.body, id: id };
   res.status(200).json(wishes[wishIndex]);
 });
@@ -204,7 +203,7 @@ app.put('/api/wishes/:id', authenticateToken, authorizePermission(['WRITE']), (r
 app.delete('/api/wishes/:id', authenticateToken, authorizePermission(['DELETE']), (req, res) => {
   const id = parseInt(req.params.id);
   const initialLength = wishes.length;
-  wishes = wishes.filter(wish => wish.id !== id); // Удаляем желание по ID
+  wishes = wishes.filter(wish => wish.id !== id); // Удаляем по ID
 
   if (wishes.length < initialLength) {
     res.status(200).json({ message: 'Wish deleted successfully' });
@@ -221,4 +220,4 @@ app.listen(PORT, () => {
   console.log(`Test token endpoint (POST): http://localhost:${PORT}/api/token`);
   console.log(`Use Postman/Insomnia for POST /api/token with { "username": "admin", "password": "adminpass" }`);
   console.log(`Remember to include 'Authorization: Bearer YOUR_TOKEN' header for protected routes.`);
-}); 
+});
